@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP32 Sıcaklık & Nem İzleme</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body {
+            max-width: 600px;
+            min-width: 320px;
+            margin: 30px auto;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: #f9f9f9;
+            color: #222;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            font-size: 18px;
+            line-height: 1.4;
+        }
+        h1 {
+            text-align: center;
+            color: #0078d7;
+            margin-bottom: 30px;
+            font-size: 2.4em;
+        }
+        .data-display {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-weight: 700;
+            font-size: 1.4em;
+            text-align: center;
+            word-wrap: break-word;
+        }
+        .temperature-data {
+            background: #e3f2fd;
+            color: #0277bd;
+            font-weight: bold;
+            font-size: 1.6em;
+        }
+        .humidity-data {
+            background: #e0f2f1;
+            color: #00796b;
+            font-weight: bold;
+            font-size: 1.6em;
+        }
+        #mqttStatus {
+            text-align: center;
+            font-style: italic;
+            margin-top: 10px;
+            color: #666;
+            font-size: 1em;
+        }
+        @media screen and (max-width: 420px) {
+            body {
+                max-width: 95%;
+                padding: 15px;
+                margin: 20px auto;
+                font-size: 20px;
+            }
+            h1 {
+                font-size: 2em;
+                margin-bottom: 20px;
+            }
+            .data-display {
+                font-size: 1.2em;
+                padding: 16px;
+                margin-bottom: 15px;
+            }
+            .temperature-data, .humidity-data {
+                font-size: 1.4em;
+            }
+            #mqttStatus {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 Sıcaklık & Nem İzleme</h1>
+
+    <div class="data-display temperature-data" id="tempDisplay">Sıcaklık: -- °C</div>
+    <div class="data-display humidity-data" id="humidityDisplay">Nem: -- %</div>
+
+    <p id="mqttStatus">MQTT Durumu: Bağlanıyor...</p>
+
+    <script>
+        // HiveMQ Cloud WebSockets URL'niz ve Portunuz (8884)
+        const mqttUrl = 'wss://4b74b290196b43e5ac538a4b3b907de2.s1.eu.hivemq.cloud:8884/mqtt'; 
+
+        // HiveMQ kimlik bilgileriniz (ESP-2 kodundaki mqtt_username ve mqtt_password ile aynı olmalı)
+        const options = {
+            username: 'webuser',
+            password: 'n12345678N',
+            clientId: 'webClient-' + Math.random().toString(16).substr(2, 8), // Rastgele Client ID oluşturulur
+            clean: true, // Her bağlantıda eski oturumu temizle
+            reconnectPeriod: 4000 // Yeniden bağlanma süresi (ms)
+        };
+
+        const client = mqtt.connect(mqttUrl, options);
+
+        const tempDisplayEl = document.getElementById('tempDisplay');
+        const humidityDisplayEl = document.getElementById('humidityDisplay');
+        const mqttStatusEl = document.getElementById('mqttStatus');
+
+        client.on('connect', () => {
+            mqttStatusEl.textContent = 'MQTT Durumu: Bağlandı!';
+            // ESP-2'nin yayınlayacağı konulara abone olalım
+            client.subscribe('esp32/temperature');
+            client.subscribe('esp32/humidity');
+            console.log("MQTT'ye bağlandı ve konulara abone oldu.");
+        });
+
+        client.on('error', (err) => {
+            mqttStatusEl.textContent = 'MQTT Hatası: ' + err.message;
+            console.error("MQTT Hatası:", err);
+        });
+
+        client.on('reconnect', () => {
+            mqttStatusEl.textContent = 'MQTT Durumu: Yeniden bağlanıyor...';
+            console.log("MQTT yeniden bağlanıyor...");
+        });
+
+        client.on('message', (topic, message) => {
+            const msg = message.toString();
+            console.log(`Konu: ${topic}, Mesaj: ${msg}`);
+
+            if (topic === 'esp32/temperature') {
+                tempDisplayEl.textContent = `Sıcaklık: ${msg} °C`;
+            } else if (topic === 'esp32/humidity') {
+                humidityDisplayEl.textContent = `Nem: ${msg} %`;
+            }
+        });
+    </script>
+</body>
+</html>
