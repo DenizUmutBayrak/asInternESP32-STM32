@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akıllı Sensör İzleme Paneli</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script> 
+    <style>
+        /* Genel Stil Ayarları */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ekranın tamamını kapla */
+            margin: 0;
+            background-color: #f0f2f5; /* Açık gri arka plan */
+            color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            font-size: 18px;
+            line-height: 1.4;
+            transition: background-color 0.5s ease; /* Arka plan renk geçişi */
+            overflow: hidden; /* Deprem yazısı dışarı taşmasın */
+        }
+        
+        /* Ana Kapsayıcı Stil Ayarları */
+        .container {
+            background-color: white;
+            padding: 40px 60px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); /* Daha belirgin gölge */
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            position: relative; /* Deprem yazısının üstüne gelmesi için */
+            z-index: 10; /* Diğer öğelerin önünde olsun */
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }
+
+        p {
+            font-size: 1.1em;
+            color: #555;
+            margin-bottom: 10px;
+        }
+
+        /* Işık Durumu Göstergesi */
+        #lightStatus {
+            font-size: 3em; /* Daha büyük font */
+            font-weight: bold;
+            color: #007bff; /* Mavi varsayılan */
+            margin-bottom: 25px;
+            padding: 10px;
+            border-radius: 8px;
+            background-color: #e9f5ff; /* Açık mavi arka plan */
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        /* MQTT Bağlantı Durumu */
+        #mqttStatus {
+            text-align: center;
+            font-style: italic;
+            margin-top: 20px;
+            color: #666;
+            font-size: 1em;
+        }
+
+        /* Deprem Uyarısı Kutusu */
+        #earthquakeAlert {
+            font-size: 5em; /* Çok büyük font */
+            font-weight: bold;
+            color: white;
+            background-color: #dc3545; /* Kırmızı renk */
+            padding: 30px 60px;
+            border-radius: 20px;
+            display: none; /* Başlangıçta gizli */
+            position: fixed; /* Ekranın ortasında sabit */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Tam ortaya hizala */
+            z-index: 1000; /* Her şeyin üstünde */
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.6); /* Daha belirgin gölge */
+            box-shadow: 0 0 25px rgba(255, 0, 0, 0.7); /* Kırmızı parlama */
+            animation: pulse 1.2s infinite alternate ease-in-out; /* Titreşim efekti */
+            border: 5px solid white; /* Beyaz kenarlık */
+        }
+
+        /* Deprem Aktifken Arka Plan Rengi */
+        body.earthquake-active {
+            background-color: #ff4d4d; /* Daha canlı kırmızı ton */
+        }
+
+        /* Deprem Yazısı Animasyonu */
+        @keyframes pulse {
+            from { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            to { transform: translate(-50%, -50%) scale(1.05); opacity: 0.9; }
+        }
+
+        /* Küçük ekranlar için duyarlı tasarım */
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px 30px;
+            }
+            h1 {
+                font-size: 1.8em;
+            }
+            #lightStatus {
+                font-size: 2em;
+            }
+            #earthquakeAlert {
+                font-size: 3em;
+                padding: 20px 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Akıllı Sensör Kontrol Paneli</h1>
+        <p>Hareket Sensörü Durumu:</p>
+        <div id="lightStatus">Yükleniyor...</div>
+        <p id="mqttStatus">MQTT Durumu: Bağlanıyor...</p>
+    </div>
+
+    <div id="earthquakeAlert">DEPREM!</div>
+
+    <script>
+        // MQTT Broker URL'i ve Kimlik Bilgileri (Sizin sıcaklık/nem projenizden alındı)
+        // DİKKAT: wss:// kullanmak, güvenli (SSL/TLS) bağlantı demektir.
+        // ESP32 kodunuz 1883 portu ile güvenli olmayan bağlantı yapıyorsa,
+        // burayı ws://YOUR_HIVEMQ_HOST.hivemq.cloud:8080/mqtt olarak değiştirmeniz GEREKEBİLİR.
+        const mqttUrl = 'wss://4b74b290196b43e5ac538a4b3b907de2.s1.eu.hivemq.cloud:8884/mqtt';
+
+        const options = {
+            username: 'webuser',
+            password: 'n12345678N',
+            clientId: 'webClient-' + Math.random().toString(16).substr(2, 8), // Rastgele Client ID oluşturulur
+            clean: true, // Her bağlantıda eski oturumu temizle
+            reconnectPeriod: 4000 // Yeniden bağlanma süresi (ms)
+        };
+
+        const client = mqtt.connect(mqttUrl, options);
+
+        // HTML elementlerini seç
+        const lightStatusDiv = document.getElementById('lightStatus');
+        const earthquakeAlertDiv = document.getElementById('earthquakeAlert');
+        const mqttStatusEl = document.getElementById('mqttStatus'); // MQTT durumu için
+        const bodyElement = document.body;
+
+        // MQTT olay dinleyicileri
+        client.on('connect', () => {
+            mqttStatusEl.textContent = 'MQTT Durumu: Bağlandı!';
+            console.log("MQTT'ye bağlandı ve konulara abone oluyor.");
+            // ESP32'den gelen ışık ve deprem uyarı konularına abone ol
+            client.subscribe('home/sensor/light_status');
+            client.subscribe('home/sensor/earthquake_alert');
+        });
+
+        client.on('error', (err) => {
+            mqttStatusEl.textContent = 'MQTT Hatası: ' + err.message;
+            console.error("MQTT Hatası:", err);
+        });
+
+        client.on('reconnect', () => {
+            mqttStatusEl.textContent = 'MQTT Durumu: Yeniden bağlanıyor...';
+            console.log("MQTT yeniden bağlanıyor...");
+        });
+
+        client.on('message', (topic, message) => {
+            const msg = message.toString();
+            console.log(`Konu: ${topic}, Mesaj: ${msg}`);
+
+            // Işık durumu mesajlarını işle
+            if (topic === 'home/sensor/light_status') {
+                if (msg === "on") {
+                    lightStatusDiv.textContent = "Işık Açıldı";
+                    lightStatusDiv.style.color = "#28a745"; // Yeşil
+                } else {
+                    lightStatusDiv.textContent = "Işık Kapalı";
+                    lightStatusDiv.style.color = "#dc3545"; // Kırmızı
+                }
+            } 
+            // Deprem uyarısı mesajlarını işle
+            else if (topic === 'home/sensor/earthquake_alert') {
+                if (msg === "ALERT") {
+                    bodyElement.classList.add('earthquake-active'); // Arka planı kırmızı yap
+                    earthquakeAlertDiv.style.display = 'block'; // Deprem yazısını göster
+                } else { // "CLEAR" mesajı geldiğinde
+                    bodyElement.classList.remove('earthquake-active'); // Arka planı normale döndür
+                    earthquakeAlertDiv.style.display = 'none'; // Deprem yazısını gizle
+                }
+            }
+        });
+    </script>
+</body>
+</html>

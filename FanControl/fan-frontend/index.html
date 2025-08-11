@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP32 Fan Kontrol</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body {
+      max-width: 600px;
+      min-width: 320px;
+      margin: 30px auto;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f9f9f9;
+      color: #222;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      font-size: 18px;
+      line-height: 1.4;
+    }
+    h1 {
+      text-align: center;
+      color: #0078d7;
+      margin-bottom: 30px;
+      font-size: 2.4em;
+    }
+    .status {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      font-weight: 700;
+      font-size: 1.4em;
+      text-align: center;
+      word-wrap: break-word;
+    }
+    .temperature {
+      background: #e3f2fd;
+      color: #0277bd;
+      font-weight: bold;
+      font-size: 1.6em;
+      margin-bottom: 30px;
+    }
+    button {
+      width: 100%;
+      padding: 16px;
+      margin: 12px 0;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1.2em;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      box-sizing: border-box;
+    }
+    #btnOn {
+      background-color: #28a745;
+      color: white;
+    }
+    #btnOn:hover {
+      background-color: #218838;
+    }
+    #btnOff {
+      background-color: #dc3545;
+      color: white;
+    }
+    #btnOff:hover {
+      background-color: #c82333;
+    }
+    #btnAuto {
+      background-color: #007bff;
+      color: white;
+    }
+    #btnAuto:hover {
+      background-color: #0069d9;
+    }
+    #mqttStatus {
+      text-align: center;
+      font-style: italic;
+      margin-top: 10px;
+      color: #666;
+      font-size: 1em;
+    }
+    @media screen and (max-width: 420px) {
+      body {
+        max-width: 95%;
+        padding: 15px;
+        margin: 20px auto;
+        font-size: 20px;
+      }
+      h1 {
+        font-size: 2em;
+        margin-bottom: 20px;
+      }
+      .status {
+        font-size: 1.2em;
+        padding: 16px;
+        margin-bottom: 15px;
+      }
+      .temperature {
+        font-size: 1.4em;
+        margin-bottom: 25px;
+      }
+      button {
+        font-size: 1.1em;
+        padding: 14px;
+        margin: 10px 0;
+      }
+      #mqttStatus {
+        font-size: 0.9em;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>ESP32 Fan Kontrol</h1>
+
+  <div class="status" id="fanStatus">Fan Durumu: Bilinmiyor</div>
+  <div class="status temperature" id="tempStatus">Sıcaklık: -- °C</div>
+
+  <button id="btnOn">Fan Aç</button>
+  <button id="btnOff">Fan Kapat</button>
+  <button id="btnAuto">Otomatik Mod</button>
+
+  <p id="mqttStatus">MQTT Durumu: Bağlanıyor...</p>
+
+  <script>
+    const mqttUrl = 'wss://4b74b290196b43e5ac538a4b3b907de2.s1.eu.hivemq.cloud:8884/mqtt';
+
+    const options = {
+      username: 'webuser',
+      password: 'n12345678N',
+      clientId: 'webClient-' + Math.random().toString(16).substr(2, 8),
+      clean: true,
+      reconnectPeriod: 4000
+    };
+
+    const client = mqtt.connect(mqttUrl, options);
+
+    const fanStatusEl = document.getElementById('fanStatus');
+    const tempStatusEl = document.getElementById('tempStatus');
+    const mqttStatusEl = document.getElementById('mqttStatus');
+    const btnOn = document.getElementById('btnOn');
+    const btnOff = document.getElementById('btnOff');
+    const btnAuto = document.getElementById('btnAuto');
+
+    client.on('connect', () => {
+      mqttStatusEl.textContent = 'MQTT Durumu: Bağlandı!';
+      client.subscribe('fan/status');
+      client.subscribe('fan/temperature');
+    });
+
+    client.on('error', (err) => {
+      mqttStatusEl.textContent = 'MQTT Hatası: ' + err.message;
+    });
+
+    client.on('reconnect', () => {
+      mqttStatusEl.textContent = 'MQTT Durumu: Yeniden bağlanıyor...';
+    });
+
+    client.on('message', (topic, message) => {
+      const msg = message.toString();
+
+      if (topic === 'fan/status') {
+        let displayText = '';
+        switch(msg) {
+          case 'fan_on':
+            displayText = 'Fan Durumu: Çalışıyor';
+            break;
+          case 'fan_off':
+            displayText = 'Fan Durumu: Kapalı';
+            break;
+          case 'auto':
+            displayText = 'Fan Durumu: Otomatik Modda';
+            break;
+          default:
+            displayText = 'Fan Durumu: ' + msg;
+        }
+        fanStatusEl.textContent = displayText;
+      }
+      else if (topic === 'fan/temperature') {
+        tempStatusEl.textContent = 'Sıcaklık: ' + msg + ' °C';
+      }
+    });
+
+    btnOn.addEventListener('click', () => {
+      client.publish('fan/control', 'fan_on');
+    });
+
+    btnOff.addEventListener('click', () => {
+      client.publish('fan/control', 'fan_off');
+    });
+
+    btnAuto.addEventListener('click', () => {
+      client.publish('fan/control', 'auto');
+    });
+  </script>
+</body>
+</html>
